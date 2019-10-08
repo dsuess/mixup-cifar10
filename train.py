@@ -71,13 +71,13 @@ transform_test = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-trainset = datasets.CIFAR10(root='~/data', train=True, download=False,
+trainset = datasets.CIFAR10(root='__pycache__', train=True, download=True,
                             transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset,
                                           batch_size=args.batch_size,
                                           shuffle=True, num_workers=8)
 
-testset = datasets.CIFAR10(root='~/data', train=False, download=False,
+testset = datasets.CIFAR10(root='__pycache__', train=False, download=False,
                            transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=100,
                                          shuffle=False, num_workers=8)
@@ -155,7 +155,7 @@ def train(epoch):
                                                       targets_a, targets_b))
         outputs = net(inputs)
         loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
-        train_loss += loss.data[0]
+        train_loss += loss.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
         correct += (lam * predicted.eq(targets_a.data).cpu().sum().float()
@@ -169,7 +169,7 @@ def train(epoch):
                      'Loss: %.3f | Reg: %.5f | Acc: %.3f%% (%d/%d)'
                      % (train_loss/(batch_idx+1), reg_loss/(batch_idx+1),
                         100.*correct/total, correct, total))
-    return (train_loss/batch_idx, reg_loss/batch_idx, 100.*correct/total)
+    return (train_loss/batch_idx, reg_loss/batch_idx, (100.*correct/total).item())
 
 
 def test(epoch):
@@ -185,7 +185,7 @@ def test(epoch):
         outputs = net(inputs)
         loss = criterion(outputs, targets)
 
-        test_loss += loss.data[0]
+        test_loss += loss.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
@@ -194,12 +194,12 @@ def test(epoch):
                      'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (test_loss/(batch_idx+1), 100.*correct/total,
                         correct, total))
-    acc = 100.*correct/total
+    acc = 100.*correct.item()/total
     if epoch == start_epoch + args.epoch - 1 or acc > best_acc:
         checkpoint(acc, epoch)
     if acc > best_acc:
         best_acc = acc
-    return (test_loss/batch_idx, 100.*correct/total)
+    return (test_loss/batch_idx, acc)
 
 
 def checkpoint(acc, epoch):
