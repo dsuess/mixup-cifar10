@@ -1,11 +1,3 @@
-#!/usr/bin/env python3 -u
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree.
-from __future__ import print_function
-
 import argparse
 import csv
 import os
@@ -28,6 +20,8 @@ parser.add_argument('--resume', '-r', action='store_true',
                     help='resume from checkpoint')
 parser.add_argument('--model', default="ResNet18", type=str,
                     help='model type (default: ResNet18)')
+parser.add_argument('--mixup-mode', default="all", type=str,
+                    help='how we do mixup')
 parser.add_argument('--name', default='0', type=str, help='name of run')
 parser.add_argument('--seed', default=0, type=int, help='random seed')
 parser.add_argument('--batch-size', default=128, type=int, help='batch size')
@@ -136,11 +130,7 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
     return mixed_x, y_a, y_b, lam
 
 
-def mixup_criterion(criterion, pred, y_a, y_b, lam):
-    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
-
-
-def train(epoch):
+def train(epoch, train_criterion):
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
@@ -156,7 +146,7 @@ def train(epoch):
         inputs, targets_a, targets_b = map(Variable, (inputs,
                                                       targets_a, targets_b))
         outputs = net(inputs)
-        loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+        loss = train_criterion(criterion, outputs, targets_a, targets_b, lam)
         train_loss += loss.item()
         _, predicted = torch.max(outputs.data, 1)
         total += targets.size(0)
@@ -236,8 +226,30 @@ if not os.path.exists(logname):
         logwriter.writerow(['epoch', 'train loss', 'reg loss', 'train acc',
                             'test loss', 'test acc'])
 
+
+def mixup_criterion_all(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+
+def mixup_criterion_image_only(criterion, pred, y_a, _, lam):
+    return criterion(pred, y_a)
+
+
+def mixup_criterion_smoothing(_, pred, y_a, __, lam):
+    log_logits = nn.functional.log_softmax(pred, dim=1)
+    pref = (1 - lam) / 9
+    loss = - (lam - pref) * log_logits.gather(dim=1, index=y_a[:, None]).squeeze(dim=1)
+    loss -= pref * log_logits.sum(dim=1)
+    return loss.mean()
+
+TRAIN_CRITERIA = {
+    'all': mixup_criterion_all,
+    'image-only': mixup_criterion_image_only,
+    'smoothing': mixup_criterion_smoothing
+}
+
 for epoch in range(start_epoch, args.epoch):
-    train_loss, reg_loss, train_acc = train(epoch)
+    train_loss, reg_loss, train_acc = train(epoch, TRAIN_CRITERIA[args.mixup_mode])
     test_loss, test_acc = test(epoch)
     adjust_learning_rate(optimizer, epoch)
     with open(logname, 'a') as logfile:
