@@ -120,6 +120,8 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
     '''Returns mixed inputs, pairs of targets, and lambda'''
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
+        # de-symmetrize
+        lam = np.maximum(lam, 1 - lam)
     else:
         lam = 1
 
